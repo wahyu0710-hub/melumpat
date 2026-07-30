@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Katak Cerdas - Game Edukasi</title>
+    <!-- Tailwind CSS untuk Styling Responsif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome untuk Ikon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tone.js untuk Efek Suara Sintetis -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #0f172a;
+            color: white;
+            overflow: hidden; /* Mencegah scroll saat main */
+            touch-action: manipulation; /* Optimasi sentuhan */
+        }
+
+        h1, h2, h3, .judul-font {
+            font-family: 'Fredoka One', cursive;
+        }
+
+        /* Latar Belakang Air (Sungai/Kolam) */
+        .water-bg {
+            background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 50%, #0369a1 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Daun Teratai (Platform) */
+        .lily-pad {
+            background: #22c55e;
+            border-bottom: 6px solid #166534;
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            position: relative;
+            transition: transform 0.2s, background-color 0.2s;
+            cursor: pointer;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .lily-pad::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 80%;
+            border-radius: inherit;
+            border: 2px dashed rgba(255,255,255,0.2);
+        }
+
+        .lily-pad:hover:not(:disabled) {
+            transform: translateY(-4px) scale(1.05);
+            background: #4ade80;
+        }
+        .lily-pad:active:not(:disabled) {
+            transform: translateY(2px);
+        }
+
+        /* Animasi Katak Melompat Benar */
+        @keyframes jumpHappy {
+            0% { transform: translateY(0) scale(1); }
+            30% { transform: translateY(-80px) scale(1.1) rotate(-10deg); }
+            50% { transform: translateY(-100px) scale(1.2) rotate(10deg); }
+            70% { transform: translateY(-80px) scale(1.1) rotate(-5deg); }
+            100% { transform: translateY(0) scale(1); }
+        }
+        .anim-jump {
+            animation: jumpHappy 0.8s ease-in-out;
+            transform-origin: bottom center;
+        }
+
+        /* Animasi Daun Turun saat Benar */
+        @keyframes slideDown {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(150px); opacity: 0; }
+        }
+        .anim-slide-down {
+            animation: slideDown 0.5s forwards ease-in;
+        }
+
+        /* Animasi Katak Jatuh (Salah) */
+        @keyframes sinkWater {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            20% { transform: translateY(-20px) scale(1); }
+            100% { transform: translateY(150px) scale(0.5); opacity: 0; }
+        }
+        .anim-sink {
+            animation: sinkWater 0.8s forwards cubic-bezier(0.55, 0.055, 0.675, 0.19);
+        }
+
+        /* Efek Ripple (Gelombang) Air */
+        @keyframes ripple {
+            0% { transform: scale(0); opacity: 0.8; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+        .ripple {
+            position: absolute;
+            width: 60px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            animation: ripple 1s forwards ease-out;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Efek Splash (Cipratan Air) */
+        @keyframes splashUp {
+            0% { transform: translateY(0) scale(0.5); opacity: 1; }
+            100% { transform: translateY(-40px) scale(1.5); opacity: 0; }
+        }
+        .splash {
+            position: absolute;
+            font-size: 2rem;
+            animation: splashUp 0.6s forwards ease-out;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        /* Tata letak grid untuk mode pemain */
+        .grid-players-1 { grid-template-columns: 1fr; }
+        .grid-players-2 { grid-template-columns: repeat(2, 1fr); }
+        /* Pada mobile, paksa maksimal 2 kolom agar muat, di desktop bisa 4 */
+        .grid-players-4 { grid-template-columns: repeat(2, 1fr); }
+        @media (min-width: 768px) {
+            .grid-players-4 { grid-template-columns: repeat(4, 1fr); }
+        }
+
+        /* Kanvas Hujan */
+        #rainCanvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* Scrollbar tersembunyi untuk estetika panel pemain */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col relative" id="gameBody">
+
+    <!-- Efek Cuaca (Hujan) Canvas Overlay -->
+    <canvas id="rainCanvas"></canvas>
+
+    <!-- Header / Navigasi Atas -->
+    <header class="absolute top-0 left-0 w-full z-40 p-4 flex justify-between items-center pointer-events-none">
+        <div class="bg-black/50 backdrop-blur-sm px-4 py-2 rounded-full pointer-events-auto">
+            <h1 class="text-xl md:text-2xl text-yellow-300 drop-shadow-md">🐸 Froggy Jumps!</h1>
+        </div>
+        <button id="fullscreenBtn" onclick="toggleFullScreen()" class="bg-black/50 hover:bg-white/20 text-white w-10 h-10 rounded-full flex items-center justify-center pointer-events-auto transition">
+            <i class="fas fa-expand"></i>
+        </button>
+    </header>
+
+    <!-- LAYAR UTAMA (MENU) -->
+    <div id="screen-menu" class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] transition-opacity duration-500">
+        <div class="bg-slate-800/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl border border-slate-600 text-center max-w-lg w-[90%]">
+            <div class="text-7xl mb-4 anim-jump inline-block">🐸</div>
+            <h2 class="text-3xl md:text-4xl text-green-400 mb-2">Froggy Jumps</h2>
+            <p class="text-slate-300 mb-6">Materi: Perkalian & Pembagian<br><span class="text-sm text-yellow-200">Kelas 3 SD</span></p>
+            
+            <h3 class="text-xl mb-4 font-bold">Pilih Mode Bermain:</h3>
+            <div class="flex flex-col gap-3">
+                <button onclick="startGame(1)" class="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-3 px-6 rounded-xl border-b-4 border-blue-700 active:border-b-0 active:mt-1 transition-all text-lg judul-font shadow-lg">
+                    <i class="fas fa-user mr-2"></i> Solo (1 Pemain)
+                </button>
+                <button onclick="startGame(2)" class="w-full bg-purple-500 hover:bg-purple-400 text-white font-bold py-3 px-6 rounded-xl border-b-4 border-purple-700 active:border-b-0 active:mt-1 transition-all text-lg judul-font shadow-lg">
+                    <i class="fas fa-user-friends mr-2"></i> Duel (2 Pemain)
+                </button>
+                <button onclick="startGame(4)" class="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-3 px-6 rounded-xl border-b-4 border-orange-700 active:border-b-0 active:mt-1 transition-all text-lg judul-font shadow-lg">
+                    <i class="fas fa-users mr-2"></i> Squad (4 Pemain)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LAYAR PERMAINAN (GAME) -->
+    <div id="screen-game" class="absolute inset-0 z-20 flex hidden opacity-0 transition-opacity duration-500 pt-16 pb-2 px-2">
+        <!-- Kontainer Grid Pemain akan diinjeksi via JS -->
+        <div id="players-container" class="w-full h-full grid gap-2"></div>
+    </div>
+
+    <!-- LAYAR HASIL (GAME OVER) -->
+    <div id="screen-result" class="absolute inset-0 z-40 hidden flex-col items-center justify-center bg-black/80 backdrop-blur-md opacity-0 transition-opacity duration-500">
+        <div class="bg-slate-800 p-8 rounded-3xl shadow-2xl border-2 border-yellow-400 text-center max-w-lg w-[90%] relative overflow-hidden">
+            <!-- Confetti / Hiasan Latar -->
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500"></div>
+            
+            <h2 class="text-4xl text-yellow-300 mb-6 judul-font"><i class="fas fa-trophy text-yellow-400"></i> Hasil Akhir</h2>
+            
+            <div id="result-list" class="flex flex-col gap-3 mb-8 w-full text-left">
+                <!-- Hasil skor di-generate JS -->
+            </div>
+
+            <button onclick="backToMenu()" class="bg-green-500 hover:bg-green-400 text-white font-bold py-3 px-8 rounded-full border-b-4 border-green-700 active:border-b-0 active:translate-y-1 transition-all text-xl shadow-lg judul-font mx-auto">
+                <i class="fas fa-home mr-2"></i> Menu Utama
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Data Bank Soal (Materi: Matematika Dasar - Perkalian & Pembagian)
+        const bankSoal = [
+            { t: "Berapakah hasil dari 5 x 4?", j: ["15", "20", "25", "30"], b: 1 },
+            { t: "Berapakah hasil dari 18 : 3?", j: ["5", "6", "7", "8"], b: 1 },
+            { t: "Berapakah hasil dari 7 x 6?", j: ["42", "48", "36", "49"], b: 0 },
+            { t: "Jika 32 : 8, maka hasilnya adalah...", j: ["3", "4", "5", "6"], b: 1 },
+            { t: "Hasil dari 9 x 5 adalah...", j: ["40", "45", "50", "35"], b: 1 },
+            { t: "Ibu membagikan 24 permen kepada 4 anak. Berapa permen yang diterima setiap anak?", j: ["4", "5", "6", "7"], b: 2 },
+            { t: "Berapakah hasil dari 8 x 8?", j: ["64", "56", "72", "48"], b: 0 },
+            { t: "Hasil dari 45 : 9 adalah...", j: ["4", "5", "6", "7"], b: 1 },
+            { t: "Berapakah hasil dari 6 x 9?", j: ["54", "63", "45", "72"], b: 0 },
+            { t: "Berapakah hasil dari 50 : 5?", j: ["10", "5", "15", "20"], b: 0 }
+        ];
+
+        // State Global Game
+        let players = [];
+        let numPlayers = 1;
+        let isGameRunning = false;
+        let audioContextStarted = false;
+
+        // Tema Warna Pemain (P1: Merah, P2: Biru, P3: Kuning, P4: Ungu)
+        const playerThemes = [
+            { color: 'text-red-300', bg: 'bg-red-500/20', border: 'border-red-400' },
+            { color: 'text-blue-300', bg: 'bg-blue-500/20', border: 'border-blue-400' },
+            { color: 'text-yellow-300', bg: 'bg-yellow-500/20', border: 'border-yellow-400' },
+            { color: 'text-purple-300', bg: 'bg-purple-500/20', border: 'border-purple-400' }
+        ];
+
+        let synth, noiseSynth, bgmPlayer;
+        let pannerNodes = {}; // Untuk audio spasial tiap pemain
+
+        function initAudio() {
+            if (audioContextStarted) return;
+            Tone.start();
+            
+            // Synthesizer utama untuk efek SFX
+            synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.5 }
+            }).toDestination();
+            synth.volume.value = -10;
+
+            // Noise synth untuk efek cipratan air (splash)
+            noiseSynth = new Tone.NoiseSynth({
+                noise: { type: "white" },
+                envelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.2 }
+            }).toDestination();
+            noiseSynth.volume.value = -15;
+
+            // BGM Sederhana dengan Pattern Arpeggio
+            const melody = ["C4", "E4", "G4", "A4", "G4", "E4", "C4", "E4"];
+            let step = 0;
+            bgmPlayer = new Tone.Loop((time) => {
+                synth.triggerAttackRelease(melody[step % melody.length], "8n", time, 0.1);
+                step++;
+            }, "4n");
+            
+            Tone.Transport.bpm.value = 110;
+            Tone.Transport.start();
+            bgmPlayer.start(0);
+
+            audioContextStarted = true;
+        }
+
+        // SFX Jawaban Benar (Melodi naik)
+        function playCorrectSound() {
+            if(!audioContextStarted) return;
+            const now = Tone.now();
+            synth.triggerAttackRelease("C5", "16n", now);
+            synth.triggerAttackRelease("E5", "16n", now + 0.1);
+            synth.triggerAttackRelease("G5", "8n", now + 0.2);
+        }
+
+        // SFX Jawaban Salah (Nada jatuh)
+        function playWrongSound() {
+            if(!audioContextStarted) return;
+            const now = Tone.now();
+            synth.triggerAttackRelease("Eb4", "8n", now);
+            synth.triggerAttackRelease("B3", "8n", now + 0.2);
+            synth.triggerAttackRelease("G3", "4n", now + 0.4);
+            setTimeout(() => { noiseSynth.triggerAttackRelease("8n"); }, 400); // splash
+        }
+
+        const canvas = document.getElementById('rainCanvas');
+        const ctx = canvas.getContext('2d');
+        let drops = [];
+        let rainAnimationFrame;
+
+        function initRain() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            drops = [];
+            for (let i = 0; i < 100; i++) {
+                drops.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    len: Math.random() * 20 + 10,
+                    speed: Math.random() * 5 + 10
+                });
+            }
+        }
+
+        function drawRain() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            for (let i = 0; i < drops.length; i++) {
+                let d = drops[i];
+                ctx.moveTo(d.x, d.y);
+                ctx.lineTo(d.x, d.y + d.len);
+                d.y += d.speed;
+                if (d.y > canvas.height) {
+                    d.y = -d.len;
+                    d.x = Math.random() * canvas.width;
+                }
+            }
+            ctx.stroke();
+            if (isGameRunning) {
+                rainAnimationFrame = requestAnimationFrame(drawRain);
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            if (isGameRunning) initRain();
+        });
+
+
+
+        // Acak array soal untuk variasi
+        function shuffleArray(array) {
+            let arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        function startGame(mode) {
+            initAudio();
+            numPlayers = mode;
+            isGameRunning = true;
+            
+            // Siapkan state masing-masing pemain
+            players = [];
+            for (let i = 0; i < numPlayers; i++) {
+                players.push({
+                    id: i,
+                    name: `Pemain ${i + 1}`,
+                    score: 0,
+                    qIndex: 0,
+                    status: 'playing', // 'playing', 'won', 'lost'
+                    questions: shuffleArray(bankSoal), // Tiap pemain dapat urutan soal beda
+                    theme: playerThemes[i]
+                });
+            }
+
+            // Setup UI Layar Permainan
+            const container = document.getElementById('players-container');
+            container.className = `w-full h-full grid gap-2 grid-players-${numPlayers}`;
+            container.innerHTML = '';
+
+            players.forEach(p => {
+                const playerEl = createPlayerUI(p);
+                container.appendChild(playerEl);
+                renderQuestion(p);
+            });
+
+            // Transisi UI
+            document.getElementById('screen-menu').classList.add('opacity-0');
+            setTimeout(() => {
+                document.getElementById('screen-menu').classList.add('hidden');
+                const gameScreen = document.getElementById('screen-game');
+                gameScreen.classList.remove('hidden');
+                // trigger reflow
+                void gameScreen.offsetWidth;
+                gameScreen.classList.remove('opacity-0');
+                
+                // Mulai efek hujan
+                initRain();
+                cancelAnimationFrame(rainAnimationFrame);
+                drawRain();
+            }, 500);
+        }
+
+        function createPlayerUI(player) {
+            const col = document.createElement('div');
+            col.id = `player-col-${player.id}`;
+            col.className = `water-bg rounded-2xl flex flex-col items-center justify-between p-3 md:p-4 border-2 ${player.theme.border} shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] relative overflow-hidden`;
+            
+            // Header: Nama & Skor
+            const header = document.createElement('div');
+            header.className = `w-full flex justify-between items-center bg-black/40 backdrop-blur-sm p-2 rounded-xl border border-white/10 z-20`;
+            header.innerHTML = `
+                <div class="font-bold ${player.theme.color} judul-font flex items-center gap-2">
+                    <span class="bg-white/20 w-6 h-6 rounded-full flex items-center justify-center text-xs text-white">P${player.id + 1}</span>
+                    <span class="hidden md:inline">${player.name}</span>
+                </div>
+                <div class="bg-slate-800 px-3 py-1 rounded-lg text-yellow-300 font-bold border border-slate-600 shadow-inner">
+                    ⭐ <span id="score-${player.id}">${player.score}</span> / ${bankSoal.length}
+                </div>
+            `;
+            col.appendChild(header);
+
+            // Area Pertanyaan
+            const qArea = document.createElement('div');
+            qArea.className = "w-full max-w-sm mt-4 bg-white/95 text-slate-800 p-3 md:p-4 rounded-2xl shadow-xl z-20 text-center relative border-b-4 border-slate-300";
+            qArea.innerHTML = `
+                <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/95 rotate-45 border-r border-b border-slate-300"></div>
+                <p id="q-text-${player.id}" class="text-sm md:text-base font-bold leading-tight"></p>
+            `;
+            col.appendChild(qArea);
+
+            // Area Katak (Karakter) & Animasi Air
+            const frogArea = document.createElement('div');
+            frogArea.id = `frog-area-${player.id}`;
+            frogArea.className = "relative h-32 w-full flex items-center justify-center z-20 mt-6";
+            
+            // Daun Utama tempat katak hinggap
+            const mainLeaf = document.createElement('div');
+            mainLeaf.className = "lily-pad w-24 h-8 md:w-32 md:h-10 absolute bottom-4";
+            frogArea.appendChild(mainLeaf);
+
+            // Elemen Katak
+            const frog = document.createElement('div');
+            frog.id = `frog-${player.id}`;
+            frog.className = "text-6xl md:text-7xl absolute bottom-6 drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)] transition-transform duration-300";
+            frog.innerHTML = "🐸";
+            frogArea.appendChild(frog);
+            col.appendChild(frogArea);
+
+            // Kontainer Pilihan Jawaban (Daun-daun)
+            const optionsArea = document.createElement('div');
+            optionsArea.id = `options-${player.id}`;
+            optionsArea.className = "w-full max-w-sm flex-1 flex flex-col justify-end gap-2 z-20 mt-auto pb-4 hide-scrollbar";
+            col.appendChild(optionsArea);
+
+            // Overlay jika menang/kalah
+            const overlay = document.createElement('div');
+            overlay.id = `overlay-${player.id}`;
+            overlay.className = "absolute inset-0 bg-black/70 z-30 flex flex-col items-center justify-center hidden opacity-0 transition-opacity duration-300";
+            col.appendChild(overlay);
+
+            return col;
+        }
+
+        function renderQuestion(player) {
+            if (player.status !== 'playing') return;
+
+            const qData = player.questions[player.qIndex];
+            document.getElementById(`q-text-${player.id}`).textContent = qData.t;
+
+            const optionsContainer = document.getElementById(`options-${player.id}`);
+            optionsContainer.innerHTML = '';
+            
+            // Hilangkan animasi daun jatuh sebelumnya jika ada
+            optionsContainer.classList.remove('anim-slide-down');
+
+            // Render opsi jawaban (sebagai daun)
+            qData.j.forEach((jawaban, idx) => {
+                const btn = document.createElement('button');
+                btn.className = "lily-pad w-full p-3 md:p-4 flex items-center justify-center text-white font-bold text-sm md:text-base text-shadow-sm";
+                btn.innerHTML = `<span class="drop-shadow-md relative z-10 break-words w-full text-center px-2">${jawaban}</span>`;
+                
+                // Event saat klik jawaban
+                btn.onclick = () => handleAnswer(player, idx, btn);
+                optionsContainer.appendChild(btn);
+            });
+        }
+
+        function handleAnswer(player, selectedIdx, btnElement) {
+            if (player.status !== 'playing') return;
+            
+            // Nonaktifkan semua tombol untuk mencegah spam klik
+            const optionsContainer = document.getElementById(`options-${player.id}`);
+            const buttons = optionsContainer.querySelectorAll('button');
+            buttons.forEach(b => b.disabled = true);
+
+            const qData = player.questions[player.qIndex];
+            const isCorrect = selectedIdx === qData.b;
+            const frogEl = document.getElementById(`frog-${player.id}`);
+            const frogArea = document.getElementById(`frog-area-${player.id}`);
+
+            if (isCorrect) {
+                // LOGIKA BENAR
+                playCorrectSound();
+                player.score++;
+                document.getElementById(`score-${player.id}`).textContent = player.score;
+                
+                // Visual Effect: Daun yang ditekan menyala terang
+                btnElement.classList.add('bg-green-300', 'border-green-200');
+                
+                // Animasi Katak Melompat
+                frogEl.classList.remove('anim-jump');
+                void frogEl.offsetWidth; // trigger reflow
+                frogEl.classList.add('anim-jump');
+
+                // Animasi Daun (Pilihan) Jatuh ke bawah
+                setTimeout(() => {
+                    optionsContainer.classList.add('anim-slide-down');
+                }, 300);
+
+                // Lanjut ke soal berikutnya
+                setTimeout(() => {
+                    player.qIndex++;
+                    if (player.qIndex >= player.questions.length) {
+                        setPlayerFinish(player, 'won');
+                    } else {
+                        renderQuestion(player);
+                    }
+                }, 1000);
+
+            } else {
+                // LOGIKA SALAH
+                playWrongSound();
+                
+                // Visual Effect: Daun yang ditekan jadi merah (busuk)
+                btnElement.style.background = '#ef4444';
+                btnElement.style.borderBottomColor = '#991b1b';
+
+                // Animasi Katak Tenggelam
+                frogEl.classList.remove('anim-sink');
+                void frogEl.offsetWidth;
+                frogEl.classList.add('anim-sink');
+
+                // Generate Efek Splash Air dan Ripple di tengah area katak
+                const splash = document.createElement('div');
+                splash.className = "splash absolute bottom-4 text-4xl";
+                splash.innerHTML = "💦";
+                frogArea.appendChild(splash);
+
+                const ripple = document.createElement('div');
+                ripple.className = "ripple bottom-4";
+                frogArea.appendChild(ripple);
+
+                setTimeout(() => {
+                    setPlayerFinish(player, 'lost');
+                }, 1500);
+            }
+        }
+
+        function setPlayerFinish(player, status) {
+            player.status = status;
+            
+            const overlay = document.getElementById(`overlay-${player.id}`);
+            overlay.classList.remove('hidden');
+            void overlay.offsetWidth;
+            overlay.classList.remove('opacity-0');
+
+            if (status === 'won') {
+                overlay.innerHTML = `
+                    <div class="text-6xl mb-2 anim-jump">🏆</div>
+                    <h3 class="text-2xl font-bold text-yellow-300 judul-font">Selesai!</h3>
+                    <p class="text-white mt-2">Skor: ${player.score}/${player.questions.length}</p>
+                `;
+            } else {
+                overlay.innerHTML = `
+                    <div class="text-6xl mb-2 opacity-50 filter grayscale">🐸</div>
+                    <h3 class="text-2xl font-bold text-red-400 judul-font">Tenggelam!</h3>
+                    <p class="text-white mt-2">Skor: ${player.score}/${player.questions.length}</p>
+                `;
+            }
+
+            checkAllFinished();
+        }
+
+        function checkAllFinished() {
+            const allFinished = players.every(p => p.status !== 'playing');
+            if (allFinished) {
+                setTimeout(showResultScreen, 1500);
+            }
+        }
+
+        function showResultScreen() {
+            isGameRunning = false;
+            // Stop BGM
+            if (bgmPlayer) bgmPlayer.stop();
+
+            const resultScreen = document.getElementById('screen-result');
+            const resultList = document.getElementById('result-list');
+            
+            // Urutkan pemain berdasarkan skor tertinggi
+            const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+            
+            resultList.innerHTML = '';
+            sortedPlayers.forEach((p, index) => {
+                let badge = '';
+                if(index === 0 && p.score > 0) badge = '🥇';
+                else if(index === 1 && p.score > 0) badge = '🥈';
+                else if(index === 2 && p.score > 0) badge = '🥉';
+                else badge = '🎮';
+
+                let statusText = p.status === 'won' ? '<span class="text-green-400 text-xs ml-2">(Selesai)</span>' : '<span class="text-red-400 text-xs ml-2">(Tenggelam)</span>';
+
+                resultList.innerHTML += `
+                    <div class="bg-slate-700/80 p-4 rounded-xl flex justify-between items-center border border-slate-600">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${badge}</span>
+                            <div>
+                                <h4 class="font-bold text-lg text-white">${p.name} ${statusText}</h4>
+                            </div>
+                        </div>
+                        <div class="text-2xl font-bold text-yellow-400 judul-font">
+                            ${p.score} <span class="text-sm text-slate-300">pt</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Tampilkan Layar Hasil
+            document.getElementById('screen-game').classList.add('opacity-0');
+            setTimeout(() => {
+                document.getElementById('screen-game').classList.add('hidden');
+                resultScreen.classList.remove('hidden');
+                void resultScreen.offsetWidth;
+                resultScreen.classList.remove('opacity-0');
+            }, 500);
+        }
+
+        function backToMenu() {
+            document.getElementById('screen-result').classList.add('opacity-0');
+            setTimeout(() => {
+                document.getElementById('screen-result').classList.add('hidden');
+                const menuScreen = document.getElementById('screen-menu');
+                menuScreen.classList.remove('hidden');
+                void menuScreen.offsetWidth;
+                menuScreen.classList.remove('opacity-0');
+            }, 500);
+        }
+
+        // Fitur Fullscreen
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+                document.querySelector('#fullscreenBtn i').className = "fas fa-compress";
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                    document.querySelector('#fullscreenBtn i').className = "fas fa-expand";
+                }
+            }
+        }
+    </script>
+</body>
+</html>
